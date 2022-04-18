@@ -1,80 +1,85 @@
-# Copyright (c) 2018 Bart Massey
-# [This program is licensed under the "MIT License"]
-# Please see the file LICENSE in the source
-# distribution of this software for license terms.
+#!/usr/bin/env python3
+"""Load an audio file into memory and play its contents.
 
-# Emit a monophonic square wave on audio output using the
-# sounddevice blocking interface.
+NumPy and the soundfile module (https://python-soundfile.readthedocs.io/)
+must be installed for this to work.
 
-import struct, sys, time
+This example program loads the whole file into memory before starting
+playback.
+To play very long files, you should use play_long_file.py instead.
+
+This example could simply be implemented like this::
+
+    import sounddevice as sd
+    import soundfile as sf
+
+    data, fs = sf.read('my-file.wav')
+    sd.play(data, fs)
+    sd.wait()
+
+... but in this example we show a more low-level implementation
+using a callback stream.
+
+"""
+import argparse
+import threading
+
 import sounddevice as sd
+import soundfile as sf
 
-# Sample rate in frames per second.
-SAMPLE_RATE = 48_000
 
-# Frequency in cycles per second.
-FREQ = 400
+def int_or_str(text):
+    """Helper function for argument parsing."""
+    try:
+        return int(text)
+    except ValueError:
+        return text
 
-# Output time in seconds.
-SECS = 3.0
 
-# Size of output buffer in frames. Less than 1024 is not
-# recommended, as most audio interfaces will choke
-# horribly.
-BUFFER_SIZE = 2048
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument(
+    '-l', '--list-devices', action='store_true',
+    help='show list of audio devices and exit')
+args, remaining = parser.parse_known_args()
+if args.list_devices:
+    print(sd.query_devices())
+    parser.exit(0)
+parser = argparse.ArgumentParser(
+    description=__doc__,
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    parents=[parser])
+parser.add_argument(
+    'filename', metavar='FILENAME',
+    help='audio file to be played back')
+parser.add_argument(
+    '-d', '--device', type=int_or_str,
+    help='output device (numeric ID or substring)')
+args = parser.parse_args(remaining)
 
-# Total number of frames to be sent.
-FRAMES = SAMPLE_RATE * SECS
+event = threading.Event()
 
-# Total number of buffers to be sent. The audio
-# interface requires whole buffers, so this number
-# may be one low due to truncation.
-BUFFERS = FRAMES // BUFFER_SIZE
+try:
+    data, fs = sf.read(args.filename, always_2d=True)
 
-# Number of frames constituting a half cycle of the square
-# wave at the given frequency. The code only supports
-# whole numbers, so the frequency may be slightly higher
-# than desired due to truncation.
-FRAMES_PER_HALFCYCLE = SAMPLE_RATE // (2 * FREQ)
+    current_frame = 0
 
-print("non-blocking square wave")
-print("sample_rate: {}, secs: {}, freq: {}".format(
-        SAMPLE_RATE, SECS, FREQ))
-print("buffer size: {}, buffers: {}, halfcycle: {}".format(
-        BUFFER_SIZE, BUFFERS, FRAMES_PER_HALFCYCLE))
-print("last buffer nominal size: {}".format(
-         BUFFER_SIZE * (BUFFERS + 1) - FRAMES))
+    def callback(outdata, frames, time, status):
+        global current_frame
+        if status:
+            print(status)
+        chunksize = min(len(data) - current_frame, frames)
+        outdata[:chunksize] = data[current_frame:current_frame + chunksize]
+        if chunksize < frames:
+            outdata[chunksize:] = 0
+            raise sd.CallbackStop()
+        current_frame += chunksize
 
-# Used for the packing thingy.
-
-# State for the square generator.
-cycle = 0
-sign = 0.5
-
-# Square generator.
-def callback(out_data, frames, time_info, status):
-    global cycle, sign
-
-    buffer = list()
-    for i in range(frames):
-        buffer.append(sign)
-        cycle += 1
-        if cycle >= FRAMES_PER_HALFCYCLE:
-            sign = -sign
-            cycle = 0
-    out_data[:] = struct.pack("{}f".format(frames), *buffer)
-
-# Set up the stream.
-stream = sd.RawOutputStream(
-    samplerate = SAMPLE_RATE,
-    blocksize = BUFFER_SIZE,
-    channels = 1,
-    dtype = 'float32',
-    callback = callback,
-)
-            
-# Run the stream.
-stream.start()
-time.sleep(SECS)
-stream.stop()
-stream.close()
+    stream = sd.OutputStream(
+        samplerate=fs, device=args.device, channels=data.shape[1],
+        callback=callback, finished_callback=event.set)
+    with stream:
+        event.wait()  # Wait until playback is finished
+except KeyboardInterrupt:
+    parser.exit('\nInterrupted by user')
+except Exception as e:
+    parser.exit(type(e).__name__ + ': ' + str(e))
