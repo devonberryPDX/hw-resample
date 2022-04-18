@@ -26,6 +26,16 @@ import threading
 
 import sounddevice as sd
 import soundfile as sf
+import numpy as np
+
+from scipy import signal
+
+# Build a Kaiser window filter with "optimal" length and
+# "beta" for -40 dB of passband and stopband ripple and a
+# 0.05 transition bandwidth. Prescale the coefficients to
+# preserve the input amplitude.
+nopt, bopt = signal.kaiserord(-40, 0.05)
+subband = signal.firwin(nopt, 0.45, window=('kaiser', bopt), scale=True)
 
 
 def int_or_str(text):
@@ -63,10 +73,11 @@ try:
 
     current_frame = 0
 
-    
+    filteredData = np.zeros(len(data), dtype = float)
 
     for i in range(fs):
-        for j in range(data):
+        for j in range(len(data)):
+            filteredData[i] = subband[1] * data[i - j]
 
 
 
