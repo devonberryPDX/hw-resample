@@ -27,6 +27,7 @@ import threading
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
+from numpy import convolve as np_convolve
 
 from scipy import signal
 
@@ -34,9 +35,7 @@ from scipy import signal
 # "beta" for -40 dB of passband and stopband ripple and a
 # 0.05 transition bandwidth. Prescale the coefficients to
 # preserve the input amplitude.
-nopt, bopt = signal.kaiserord(-40, 0.05)
-subband = signal.firwin(nopt, 0.45, window=('kaiser', bopt), scale=True)
-
+#print(len(subband))
 
 def int_or_str(text):
     """Helper function for argument parsing."""
@@ -71,17 +70,24 @@ event = threading.Event()
 try:
     data, fs = sf.read(args.filename, always_2d=True)
 
+    nopt, bopt = signal.kaiserord(-40, 0.05)
+    print(nopt)
+    subband = signal.firwin(1, 0.45, window=('kaiser', bopt), width = 0.05, pass_zero=False)
+    
+    b = signal.firwin(1, [0.05, 0.95], width=0.05, pass_zero=False)
+
+    #filteredData = np.array([np_convolve(xi, subband, mode='valid') for xi in data])
+    filteredData = signal.lfilter(subband, [1.0], data)[:, len(subband) - 1:]
+    print(len(filteredData))
     current_frame = 0
 
-    filteredData = np.zeros(len(data), dtype = float)
+    #filteredData = np.zeros(len(data), dtype = float)
 
-    for i in range(fs):
-        for j in range(len(data)):
-            filteredData[i] = subband[1] * data[i - j]
+    #for i in range(fs):
+    #    for j in range(len(data)):
+    #        filteredData[i] = subband[1] * data[i - j]
 
-
-
-    decimationData = data[::2]
+    decimationData = filteredData[::2]
 
     def callback(outdata, frames, time, status):
         global current_frame
@@ -94,9 +100,7 @@ try:
             raise sd.CallbackStop()
         current_frame += chunksize
 
-
     sf.write('r' + args.filename, decimationData, int(fs / 2))
-    print(int(fs / 2))
     stream = sd.OutputStream(
         samplerate=fs, device=args.device, channels=data.shape[1],
         callback=callback, finished_callback=event.set)
