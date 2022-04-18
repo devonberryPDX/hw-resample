@@ -63,6 +63,8 @@ try:
 
     current_frame = 0
 
+    decimationData = data[::2]
+
     def callback(outdata, frames, time, status):
         global current_frame
         if status:
@@ -74,6 +76,9 @@ try:
             raise sd.CallbackStop()
         current_frame += chunksize
 
+
+    sf.write('r' + args.filename, decimationData, int(fs / 2))
+    print(int(fs / 2))
     stream = sd.OutputStream(
         samplerate=fs, device=args.device, channels=data.shape[1],
         callback=callback, finished_callback=event.set)
