@@ -63,6 +63,13 @@ try:
 
     current_frame = 0
 
+    
+
+    for i in range(fs):
+        for j in range(data):
+
+
+
     decimationData = data[::2]
 
     def callback(outdata, frames, time, status):
