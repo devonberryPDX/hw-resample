@@ -42,27 +42,20 @@ args = parser.parse_args(remaining)
 event = threading.Event()
 #-----------------------------------------------------------------------
 # Resampling
-# Guide I used: https://scipy-cookbook.readthedocs.io/items/ApplyFIRFilter.html?highlight=half%20band%20filter
-data, fs = sf.read(args.filename, always_2d=True)
+data, fs = sf.read(args.filename)
 
 nopt, bopt = signal.kaiserord(-40, 0.05)
 subband = signal.firwin(nopt, 0.45, window=('kaiser', bopt), scale=True)
 
-print(len(subband))
-
-#filteredData = signal.lfilter(subband, [1.0], data)[:, len(subband) - 1:]
-
 filteredData = np.zeros(len(data))
 
-for i in range(len(subband), fs):
+for i in range(len(subband), len(data)):
     temp = 0
     for j in range(len(subband - 1)):
          temp += subband[j] * data[i - j]
 
     filteredData[i] = temp
     
-print(len(filteredData))
-print(filteredData)
 decimationData = filteredData[::2]
 
 sf.write('r' + args.filename, decimationData, int(fs / 2))
