@@ -6,6 +6,7 @@ import threading
 
 import sounddevice as sd
 import soundfile as sf
+import numpy as np
 
 from scipy import signal
 
@@ -45,10 +46,23 @@ event = threading.Event()
 data, fs = sf.read(args.filename, always_2d=True)
 
 nopt, bopt = signal.kaiserord(-40, 0.05)
-subband = signal.firwin(1, 0.45, window=('kaiser', bopt), scale=True)
+subband = signal.firwin(nopt, 0.45, window=('kaiser', bopt), scale=True)
 
-filteredData = signal.lfilter(subband, [1.0], data)[:, len(subband) - 1:]
+print(len(subband))
 
+#filteredData = signal.lfilter(subband, [1.0], data)[:, len(subband) - 1:]
+
+filteredData = np.zeros(len(data))
+
+for i in range(len(subband), fs):
+    temp = 0
+    for j in range(len(subband - 1)):
+         temp += subband[j] * data[i - j]
+
+    filteredData[i] = temp
+    
+print(len(filteredData))
+print(filteredData)
 decimationData = filteredData[::2]
 
 sf.write('r' + args.filename, decimationData, int(fs / 2))
